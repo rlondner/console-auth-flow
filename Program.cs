@@ -163,7 +163,7 @@ namespace Okta.Samples
                     int factorNumber = 0;
                     foreach (Factor f in userFactors)
                     {
-                        Console.WriteLine("[{0}] {1}", ++factorNumber, f.FactorType);
+                        Console.WriteLine("[{0}] {1} {2}", ++factorNumber, f.FactorType, f.Provider);
                     }
                     string strFactorNumber = Console.ReadLine();
                     //need more error processing here
@@ -181,13 +181,14 @@ namespace Okta.Samples
                             case "token:software:totp":
                                 Console.WriteLine("Please enter your Google Authenticator code");
                                 string strCode = Console.ReadLine();
-                                MfaAnswer answer = new MfaAnswer
-                                {
-                                    Passcode = strCode
-                                };
+                                //MfaAnswer answer = new MfaAnswer
+                                //{
+                                //    Passcode = strCode
+                                //};
                                 try
                                 {
-                                    mfaRes = ufc.CompleteChallenge(selectedFactor, answer);
+                                    authResponse = authClient.VerifyTotpFactor(selectedFactor.Id, authResponse, strCode);
+                                    //mfaRes = ufc.CompleteChallenge(selectedFactor, answer);
                                 }
                                 catch (OktaException oe)
                                 {
@@ -199,38 +200,44 @@ namespace Okta.Samples
                                 break;
                             case "push":
                                 Console.WriteLine("Please accept the request from Okta Verify on your phone");
-                                ChallengeResponse bc = ufc.BeginChallenge(selectedFactor);
+                                //ChallengeResponse bc = ufc.BeginChallenge(selectedFactor);
 
-                                answer = new MfaAnswer();
+                                //MfaAnswer answer = new MfaAnswer();
 
                                 string factorResult = string.Empty;
-                                Uri pollTransactionUri = null;
-                                if (bc != null && (factorResult = bc.FactorResult) == "WAITING")
-                                {
-                                    pollTransactionUri = bc.Links["poll"][0].Href;
-                                    //System.Threading.Thread.Sleep(500);
-                                }
+                                //Uri pollTransactionUri = null;
+                                //if (bc != null && (factorResult = bc.FactorResult) == "WAITING")
+                                //{
+                                //    pollTransactionUri = bc.Links["poll"][0].Href;
+                                //    //System.Threading.Thread.Sleep(500);
+                                //}
 
-                                while (factorResult == string.Empty || factorResult == "WAITING")
+                                while (factorResult == string.Empty || factorResult == "WAITING" || factorResult == "MFA_CHALLENGE")
                                 {
-                                    mfaRes = ufc.PollTransaction(pollTransactionUri.ToString());
-                                    factorResult = mfaRes.FactorResult;
+                                    //mfaRes = ufc.PollTransaction(pollTransactionUri.ToString());
+                                    authResponse = authClient.VerifyPullFactor(selectedFactor.Id, authResponse);
+                                    factorResult = authResponse.FactorResult;
                                     System.Threading.Thread.Sleep(500);
                                     Console.WriteLine("Waiting for user to confirm the push notification...");
                                 }
 
                                 break;
                             case "sms":
-                                ChallengeResponse sms = ufc.BeginChallenge(selectedFactor);
+                                //ChallengeResponse sms = ufc.BeginChallenge(selectedFactor);
                                 Console.WriteLine("Please type the code you just received on your phone:");
                                 strCode = Console.ReadLine();
-                                answer = new MfaAnswer
-                                {
-                                    Passcode = strCode
-                                };
+                                //MfaAnswer answer = new MfaAnswer
+                                //{
+                                //    Passcode = strCode
+                                //};
+                                //try
+                                //{
+                                //    mfaRes = ufc.CompleteChallenge(selectedFactor, answer);
+                                //}
                                 try
                                 {
-                                    mfaRes = ufc.CompleteChallenge(selectedFactor, answer);
+                                    authResponse = authClient.VerifyTotpFactor(selectedFactor.Id, authResponse, strCode);
+                                    //mfaRes = ufc.CompleteChallenge(selectedFactor, answer);
                                 }
                                 catch (OktaException oe)
                                 {
@@ -241,13 +248,15 @@ namespace Okta.Samples
                                 }
                                 break;
 
+
                             default:
                                 break;
                         }
 
-                        if (mfaRes != null && mfaRes.FactorResult == "SUCCESS")
+                        if (authResponse != null && authResponse.Status == "SUCCESS")
                         {
                             Console.WriteLine("Your MFA response was successful");
+                            ProcessResponse(authResponse);
                         }
                         else
                         {
@@ -295,14 +304,14 @@ namespace Okta.Samples
                         string s = ex.ToString() ;
                     }
                     sessionsClient.Close(session);
-                    try
-                    {
-                        sessionsClient.Validate(session);
-                    }
-                    catch (OktaException e)
-                    {
-                        string strError = e.ErrorSummary;
-                    }
+                    //try
+                    //{
+                    //    sessionsClient.Validate(session);
+                    //}
+                    //catch (OktaException e)
+                    //{
+                    //    string strError = e.ErrorSummary;
+                    //}
 
                     break;
                 default:
