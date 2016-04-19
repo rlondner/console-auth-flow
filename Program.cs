@@ -301,7 +301,7 @@ namespace Okta.Samples
                     }
                     catch (Exception ex)
                     {
-                        string s = ex.ToString() ;
+                        string s = ex.ToString();
                     }
                     sessionsClient.Close(session);
                     //try
