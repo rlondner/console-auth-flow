@@ -91,13 +91,16 @@ namespace Okta.Samples
                     Console.WriteLine();
                 }
 
-                var authRes = authClient.Authenticate(oktaUserLogin, oktaUserPassword, null, true, false);
+                if (!string.IsNullOrEmpty(oktaUserPassword))
+                {
+                    var authRes = authClient.Authenticate(oktaUserLogin, oktaUserPassword, null, true, false);
 
-                var strAuthStatus = authRes.Status;
-                var stateToken = authRes.StateToken; //only populated if the user has to go through some additional authentication steps, such as second factor authentication
-                var sessionToken = authRes.SessionToken; //only populated if the authentication response is SUCCESS
+                    var strAuthStatus = authRes.Status;
+                    var stateToken = authRes.StateToken; //only populated if the user has to go through some additional authentication steps, such as second factor authentication
+                    var sessionToken = authRes.SessionToken; //only populated if the authentication response is SUCCESS
 
-                ProcessResponse(authRes);
+                    ProcessResponse(authRes);
+                }
 
             }
             catch (OktaAuthenticationException oAE)
@@ -170,11 +173,11 @@ namespace Okta.Samples
                     int iFactorNumber = Int32.Parse(strFactorNumber);
                     Factor selectedFactor = userFactors[iFactorNumber - 1];
 
-                    User user = usersClient.Get(oktaUserLogin);
-                    UserFactorsClient ufc = usersClient.GetUserFactorsClient(user);
-                    ChallengeResponse mfaRes = null;
+                    //User user = usersClient.Get(oktaUserLogin);
+                    //UserFactorsClient ufc = usersClient.GetUserFactorsClient(user);
+                    AuthResponse mfaRes = null;
 
-                    while (mfaRes == null || mfaRes.FactorResult != "SUCCESS")
+                    while (mfaRes == null || mfaRes.Status != "SUCCESS")
                     {
                         switch (selectedFactor.FactorType)
                         {
@@ -187,7 +190,7 @@ namespace Okta.Samples
                                 //};
                                 try
                                 {
-                                    authResponse = authClient.VerifyTotpFactor(selectedFactor.Id, authResponse, strCode);
+                                    mfaRes = authClient.VerifyTotpFactor(selectedFactor.Id, authResponse, strCode);
                                     //mfaRes = ufc.CompleteChallenge(selectedFactor, answer);
                                 }
                                 catch (OktaException oe)
@@ -215,8 +218,8 @@ namespace Okta.Samples
                                 while (factorResult == string.Empty || factorResult == "WAITING" || factorResult == "MFA_CHALLENGE")
                                 {
                                     //mfaRes = ufc.PollTransaction(pollTransactionUri.ToString());
-                                    authResponse = authClient.VerifyPullFactor(selectedFactor.Id, authResponse);
-                                    factorResult = authResponse.FactorResult;
+                                    mfaRes = authClient.VerifyPullFactor(selectedFactor.Id, authResponse);
+                                    factorResult = mfaRes.FactorResult;
                                     System.Threading.Thread.Sleep(500);
                                     Console.WriteLine("Waiting for user to confirm the push notification...");
                                 }
@@ -236,7 +239,7 @@ namespace Okta.Samples
                                 //}
                                 try
                                 {
-                                    authResponse = authClient.VerifyTotpFactor(selectedFactor.Id, authResponse, strCode);
+                                    mfaRes = authClient.VerifyTotpFactor(selectedFactor.Id, authResponse, strCode);
                                     //mfaRes = ufc.CompleteChallenge(selectedFactor, answer);
                                 }
                                 catch (OktaException oe)
@@ -248,15 +251,34 @@ namespace Okta.Samples
                                 }
                                 break;
 
+                            case "question":
+                                Console.WriteLine("Please answer the following security question:");
+                                Console.WriteLine(selectedFactor.Profile.QuestionText);
+                                Console.Write("Your answer: ");
+                                string strAnswer = Console.ReadLine();
+                                MfaAnswer mfaAnswer = new MfaAnswer { Answer = strAnswer };
+                                try
+                                {
+                                    mfaRes = authClient.Verify(authResponse.StateToken, selectedFactor, mfaAnswer);
+                                }
+                                catch (OktaException oe)
+                                {
+                                    if (oe.ErrorCode == OktaErrorCodes.FactorInvalidCodeException)
+                                    {
+                                        Console.WriteLine("You entered an invalid answer");
+                                    }
+                                }
+                                break;
+
 
                             default:
                                 break;
                         }
 
-                        if (authResponse != null && authResponse.Status == "SUCCESS")
+                        if (mfaRes != null && mfaRes.Status == "SUCCESS")
                         {
                             Console.WriteLine("Your MFA response was successful");
-                            ProcessResponse(authResponse);
+                            ProcessResponse(mfaRes);
                         }
                         else
                         {
@@ -285,25 +307,30 @@ namespace Okta.Samples
 
                     Console.WriteLine("Your session token is the following: " + authResponse.SessionToken);
 
-                    SessionsClient sessionsClient = new SessionsClient(new OktaSettings
+                    //we only call the Sessions API if we have a valid API key
+                    if (!string.IsNullOrEmpty(oktaApiKey))
                     {
-                        BaseUri = new Uri(oktaTenantUrl),
-                        ApiToken = oktaApiKey
-                    });
 
-                    //you must exchange your session token for a real session (default duration: 2 hours, but can be changed in the Sign On Policy) if you want to perform other operations on behalf of the user (such as performing an Single-Sign-On operation)
-                    Session session = sessionsClient.CreateSession(authResponse.SessionToken);
+                        SessionsClient sessionsClient = new SessionsClient(new OktaSettings
+                        {
+                            BaseUri = new Uri(oktaTenantUrl),
+                            ApiToken = oktaApiKey
+                        });
 
-                    session = sessionsClient.Validate(session);
-                    try
-                    {
-                        session = sessionsClient.Extend(session.Id);
+                        //you must exchange your session token for a real session (default duration: 2 hours, but can be changed in the Sign On Policy) if you want to perform other operations on behalf of the user (such as performing an Single-Sign-On operation)
+                        Session session = sessionsClient.CreateSession(authResponse.SessionToken);
+
+                        session = sessionsClient.Validate(session);
+                        try
+                        {
+                            session = sessionsClient.Extend(session.Id);
+                        }
+                        catch (Exception ex)
+                        {
+                            string s = ex.ToString();
+                        }
+                        sessionsClient.Close(session);
                     }
-                    catch (Exception ex)
-                    {
-                        string s = ex.ToString();
-                    }
-                    sessionsClient.Close(session);
                     //try
                     //{
                     //    sessionsClient.Validate(session);
